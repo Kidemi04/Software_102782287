@@ -1,0 +1,55 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Visitor {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  orders    Order[]
+  createdAt DateTime @default(now())
+}
+
+model Park {
+  id          String       @id
+  name        String
+  location    String
+  ticketTypes TicketType[]
+}
+
+model TicketType {
+  id       String @id
+  name     String
+  price    Float
+  parkId   String
+  park     Park   @relation(fields: [parkId], references: [id], onDelete: Cascade)
+  orderItems OrderItem[]
+}
+
+model Order {
+  id            String      @id @default(cuid())
+  createdAt     DateTime    @default(now())
+  visitDate     DateTime
+  totalAmount   Float
+  paymentMethod String
+  status        String      @default("CONFIRMED")
+  visitorId     String
+  visitor       Visitor     @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  items         OrderItem[]
+}
+
+model OrderItem {
+  id             String     @id @default(cuid())
+  quantity       Int
+  price          Float
+  ticketTypeId   String
+  orderId        String
+  ticketType     TicketType @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
+  order          Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
