@@ -13,6 +13,6 @@ export const adminService = {
   },
 
   getReport() {
-    return reportService.getSystemReport();
+    return reportService.getSystemSummary();
   },
 };

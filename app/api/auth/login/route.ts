@@ -11,10 +11,6 @@ export async function POST(request: Request) {
   return NextResponse.json({
     success: true,
     message: result.message,
-    visitor: {
-      id: result.visitor?.id,
-      name: result.visitor?.name,
-      email: result.visitor?.email,
-    },
+    user: result.user,
   });
 }

@@ -1,84 +1,54 @@
-import type { PaymentMethod } from "../domain/domainTypes";
+import type { OrderStatus } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../db";
 
-type OrderItemInput = {
-  ticketTypeId: string;
+type CreateOrderItem = {
+  productId: bigint;
   quantity: number;
-  price: number;
+  lockedPrice: number;
 };
 
 export const orderRepository = {
-  async createOrder(params: {
-    visitorId: string;
-    paymentMethod: PaymentMethod;
-    totalAmount: number;
-    visitDate: Date;
-    items: OrderItemInput[];
-  }) {
+  async createOrder(userId: bigint, items: CreateOrderItem[], status: OrderStatus) {
+    const totalAmountNumber = items.reduce((sum, i) => sum + i.lockedPrice * i.quantity, 0);
     return prisma.order.create({
       data: {
-        visitorId: params.visitorId,
-        paymentMethod: params.paymentMethod,
-        totalAmount: params.totalAmount,
-        visitDate: params.visitDate,
+        userId,
+        status,
+        totalAmount: new Prisma.Decimal(totalAmountNumber),
         items: {
-          create: params.items.map((item) => ({
-            ticketTypeId: item.ticketTypeId,
+          create: items.map((item) => ({
+            productId: item.productId,
             quantity: item.quantity,
-            price: item.price,
+            lockedPrice: new Prisma.Decimal(item.lockedPrice),
           })),
         },
       },
       include: {
-        items: {
-          include: {
-            ticketType: {
-              include: { park: true },
-            },
-          },
-        },
+        items: { include: { product: true } },
       },
     });
   },
 
-  async cancelOrder(orderId: string, visitorId: string) {
+  async findByUser(userId: bigint) {
+    return prisma.order.findMany({
+      where: { userId },
+      include: { items: { include: { product: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+  },
+
+  async findAll() {
+    return prisma.order.findMany({
+      include: { items: { include: { product: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+  },
+
+  async cancelOrder(orderId: bigint) {
     return prisma.order.updateMany({
-      where: { id: orderId, visitorId },
+      where: { orderId },
       data: { status: "CANCELLED" },
-    });
-  },
-
-  async rescheduleOrder(orderId: string, visitorId: string, visitDate: Date) {
-    return prisma.order.updateMany({
-      where: { id: orderId, visitorId, status: "CONFIRMED" },
-      data: { visitDate },
-    });
-  },
-
-  async getOrdersByVisitor(visitorId: string) {
-    return prisma.order.findMany({
-      where: { visitorId },
-      orderBy: { createdAt: "desc" },
-      include: {
-        items: {
-          include: {
-            ticketType: { include: { park: true } },
-          },
-        },
-      },
-    });
-  },
-
-  async getAllOrders() {
-    return prisma.order.findMany({
-      orderBy: { createdAt: "desc" },
-      include: {
-        items: {
-          include: {
-            ticketType: { include: { park: true } },
-          },
-        },
-      },
     });
   },
 };

@@ -1,35 +1,38 @@
-import type { PaymentMethod } from "../domain/domainTypes";
+import type { OrderStatus } from "@prisma/client";
 import { orderRepository } from "../repositories/orderRepository";
-import { visitorRepository } from "../repositories/visitorRepository";
+import { userRepository } from "../repositories/userRepository";
 
-const toOrderDTO = (order: Awaited<ReturnType<typeof orderRepository.getAllOrders>>[number]) => ({
-  id: order.id,
+const toOrderDTO = (order: Awaited<ReturnType<typeof orderRepository.findAll>>[number]) => ({
+  orderId: order.orderId.toString(),
   createdAt: order.createdAt.toISOString(),
-  visitDate: order.visitDate.toISOString(),
-  paymentMethod: order.paymentMethod as PaymentMethod,
-  status: order.status,
-  totalAmount: order.totalAmount,
+  status: order.status as OrderStatus,
+  totalAmount: Number(order.totalAmount),
   items: order.items.map((item) => ({
-    id: item.id,
-    ticketTypeId: item.ticketTypeId,
-    ticketTypeName: item.ticketType.name,
-    parkName: item.ticketType.park.name,
+    itemId: item.itemId.toString(),
+    productId: item.productId.toString(),
+    productName: item.product.productName,
     quantity: item.quantity,
-    price: item.price,
+    lockedPrice: Number(item.lockedPrice),
   })),
 });
 
 export const reportService = {
-  async getSystemReport() {
-    const visitorCount = await visitorRepository.countVisitors();
-    const orders = await orderRepository.getAllOrders();
-    const ordersDto = orders.map(toOrderDTO);
-    const totalRevenue = ordersDto.reduce((sum, o) => sum + o.totalAmount, 0);
+  async getOrdersByUser(userId: string) {
+    const orders = await orderRepository.findByUser(BigInt(userId));
+    return orders.map(toOrderDTO);
+  },
+
+  async getSystemSummary() {
+    const userCount = await userRepository.countUsers();
+    const orders = await orderRepository.findAll();
+    const orderDTOs = orders.map(toOrderDTO);
+    const totalRevenue = orderDTOs.reduce((sum, o) => sum + o.totalAmount, 0);
+
     return {
-      totalVisitors: visitorCount,
-      totalOrders: ordersDto.length,
+      totalUsers: userCount,
+      totalOrders: orderDTOs.length,
       totalRevenue,
-      orders: ordersDto,
+      orders: orderDTOs,
     };
   },
 };

@@ -1,4 +1,4 @@
-import type { CartItemInput, OrderDTO, OrderItemDTO, PaymentMethod } from "./domainTypes";
+import type { OrderDTO, OrderItemDTO, TransactionReceipt } from "./domainTypes";
 
 export const formatCurrency = (value: number) =>
   new Intl.NumberFormat("en-US", {
@@ -7,32 +7,32 @@ export const formatCurrency = (value: number) =>
     minimumFractionDigits: 2,
   }).format(value);
 
-export const calculateCartTotal = (items: { price: number; quantity: number }[]) =>
-  items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+export const calculateCartTotal = (items: { lockedPrice: number; quantity: number }[]) =>
+  items.reduce((sum, item) => sum + item.lockedPrice * item.quantity, 0);
 
-export const calculateTicketCount = (items: { quantity: number }[]) =>
+export const calculateItemCount = (items: { quantity: number }[]) =>
   items.reduce((sum, item) => sum + item.quantity, 0);
 
 export const buildOrderDTO = (params: {
-  id: string;
+  orderId: string;
   createdAt: Date;
-  visitDate: Date;
-  paymentMethod: PaymentMethod;
   status: string;
   items: OrderItemDTO[];
   totalAmount: number;
 }): OrderDTO => ({
-  id: params.id,
+  orderId: params.orderId,
   createdAt: params.createdAt.toISOString(),
-  visitDate: params.visitDate.toISOString(),
-  paymentMethod: params.paymentMethod,
-  status: params.status,
+  status: params.status as OrderDTO["status"],
   items: params.items,
   totalAmount: params.totalAmount,
 });
 
-export type CheckoutCartItem = CartItemInput & {
-  price: number;
-  ticketTypeName: string;
-  parkName: string;
-};
+export const buildReceipt = (params: {
+  orderId: string;
+  totalAmount: number;
+  status: string;
+}): TransactionReceipt => ({
+  orderId: params.orderId,
+  totalAmount: params.totalAmount,
+  status: params.status as TransactionReceipt["status"],
+});

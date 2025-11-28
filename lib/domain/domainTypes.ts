@@ -1,25 +1,30 @@
+export type OrderStatus = "PENDING" | "CONFIRMED" | "CANCELLED";
+
 export type PaymentMethod = "CARD" | "WALLET" | "DUMMY";
 
 export type CartItemInput = {
-  ticketTypeId: string;
+  productId: string;
   quantity: number;
 };
 
 export type OrderItemDTO = {
-  id: string;
-  ticketTypeId: string;
-  ticketTypeName: string;
-  parkName: string;
+  itemId: string;
+  productId: string;
+  productName: string;
   quantity: number;
-  price: number;
+  lockedPrice: number;
 };
 
 export type OrderDTO = {
-  id: string;
+  orderId: string;
   createdAt: string;
-  visitDate: string;
   totalAmount: number;
-  paymentMethod: PaymentMethod;
-  status: string;
+  status: OrderStatus;
   items: OrderItemDTO[];
+};
+
+export type TransactionReceipt = {
+  orderId: string;
+  totalAmount: number;
+  status: OrderStatus;
 };

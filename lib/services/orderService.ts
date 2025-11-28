@@ -1,131 +1,107 @@
-import type { CartItemInput, PaymentMethod } from "../domain/domainTypes";
-import { calculateCartTotal, calculateTicketCount } from "../domain/domainHelpers";
-import { paymentStrategyFactory } from "../factory/paymentStrategyFactory";
+import type { OrderStatus } from "@prisma/client";
+import { calculateCartTotal, buildReceipt } from "../domain/domainHelpers";
+import type { CartItemInput, TransactionReceipt } from "../domain/domainTypes";
 import { orderRepository } from "../repositories/orderRepository";
-import { parkRepository } from "../repositories/parkRepository";
-import { systemConfiguration } from "../config/systemConfiguration";
-import type { OrderDTO } from "../domain/domainTypes";
+import { productRepository } from "../repositories/productRepository";
+import { userRepository } from "../repositories/userRepository";
 
-const toOrderDTO = (order: Awaited<ReturnType<typeof orderRepository.createOrder>>): OrderDTO => ({
-  id: order.id,
+const toOrderDTO = (order: Awaited<ReturnType<typeof orderRepository.findByUser>>[number]) => ({
+  orderId: order.orderId.toString(),
   createdAt: order.createdAt.toISOString(),
-  visitDate: order.visitDate.toISOString(),
-  status: order.status,
-  paymentMethod: order.paymentMethod as PaymentMethod,
-  totalAmount: order.totalAmount,
+  totalAmount: Number(order.totalAmount),
+  status: order.status as OrderStatus,
   items: order.items.map((item) => ({
-    id: item.id,
-    ticketTypeId: item.ticketTypeId,
-    ticketTypeName: item.ticketType.name,
-    parkName: item.ticketType.park.name,
+    itemId: item.itemId.toString(),
+    productId: item.productId.toString(),
+    productName: item.product.productName,
     quantity: item.quantity,
-    price: item.price,
+    lockedPrice: Number(item.lockedPrice),
   })),
 });
 
 export const orderService = {
-  async checkout(params: {
-    visitorId: string;
-    cartItems: CartItemInput[];
-    paymentMethod: PaymentMethod;
-    visitDate: string;
-    paymentDetails?: { cardNumber?: string; cvv?: string; walletId?: string };
-  }) {
-    if (!params.visitorId) {
-      return { success: false, message: "You must be logged in to checkout." };
+  async processCheckout(
+    userIdInput: string,
+    cartItems: CartItemInput[],
+    paymentMethod: string
+  ): Promise<
+    | { success: false; message: string }
+    | { success: true; message: string; receipt: TransactionReceipt }
+  > {
+    if (!userIdInput) {
+      return { success: false, message: "User is required." };
     }
-    if (!params.cartItems.length) {
-      return { success: false, message: "Your cart is empty." };
-    }
-    if (!params.visitDate) {
-      return { success: false, message: "Please select a visit date." };
-    }
-    const visitDate = new Date(params.visitDate);
-    if (Number.isNaN(visitDate.getTime())) {
-      return { success: false, message: "Visit date is invalid." };
+    if (!cartItems.length) {
+      return { success: false, message: "Cart is empty." };
     }
 
-    const totalTickets = calculateTicketCount(params.cartItems);
-    if (totalTickets > systemConfiguration.maxTicketsPerOrder) {
+    let userId: bigint;
+    try {
+      userId = BigInt(userIdInput);
+    } catch {
+      return { success: false, message: "User is invalid." };
+    }
+    const user = await userRepository.findById(userId);
+    if (!user) {
+      return { success: false, message: "User not found." };
+    }
+
+    const productIds = cartItems.map((c) => BigInt(c.productId));
+    const products = await productRepository.findByIds(productIds);
+    if (products.length !== cartItems.length) {
+      return { success: false, message: "One or more products are invalid." };
+    }
+
+    const items = cartItems.map((item) => {
+      const product = products.find((p) => p.productId === BigInt(item.productId))!;
       return {
-        success: false,
-        message: `Max ${systemConfiguration.maxTicketsPerOrder} tickets per order.`,
-      };
-    }
-
-    // Load ticket details from DB.
-    const requestedIds = params.cartItems.map((i) => i.ticketTypeId);
-    const ticketTypes = await parkRepository.getTicketTypesByIds(requestedIds);
-    if (ticketTypes.length !== requestedIds.length) {
-      return { success: false, message: "Some ticket types are invalid." };
-    }
-
-    const itemsWithPricing = params.cartItems.map((item) => {
-      const ticket = ticketTypes.find((t) => t.id === item.ticketTypeId)!;
-      return {
-        ticketTypeId: item.ticketTypeId,
+        productId: product.productId,
         quantity: item.quantity,
-        price: ticket.price,
-        ticketTypeName: ticket.name,
-        parkName: ticket.park.name,
+        lockedPrice: Number(product.unitPrice),
       };
     });
 
-    const totalAmount = calculateCartTotal(itemsWithPricing);
+    const totalAmount = calculateCartTotal(items);
+    const created = await orderRepository.createOrder(
+      userId,
+      items,
+      "CONFIRMED"
+    );
 
-    const strategy = paymentStrategyFactory(params.paymentMethod, {
-      cardNumber: params.paymentDetails?.cardNumber,
-      cvv: params.paymentDetails?.cvv,
-      walletId: params.paymentDetails?.walletId,
-    });
-    const paymentResult = await strategy.execute(totalAmount);
-    if (!paymentResult.success) {
-      return { success: false, message: paymentResult.message };
-    }
-
-    const created = await orderRepository.createOrder({
-      visitorId: params.visitorId,
-      paymentMethod: params.paymentMethod,
-      totalAmount,
-      visitDate,
-      items: itemsWithPricing.map((i) => ({
-        ticketTypeId: i.ticketTypeId,
-        quantity: i.quantity,
-        price: i.price,
-      })),
-    });
-
-    return { success: true, message: paymentResult.message, order: toOrderDTO(created) };
+    return {
+      success: true,
+      message: `Order confirmed via ${paymentMethod}.`,
+      receipt: buildReceipt({
+        orderId: created.orderId.toString(),
+        totalAmount,
+        status: created.status,
+      }),
+    };
   },
 
-  async history(visitorId: string) {
-    const orders = await orderRepository.getOrdersByVisitor(visitorId);
-    return orders.map((order) => toOrderDTO(order));
+  async cancelOrder(orderIdInput: string) {
+    if (!orderIdInput) {
+      return { success: false, message: "Order ID required." };
+    }
+    try {
+      const orderId = BigInt(orderIdInput);
+      const result = await orderRepository.cancelOrder(orderId);
+      if (result.count === 0) {
+        return { success: false, message: "Order not found or already cancelled." };
+      }
+      return { success: true, message: "Order cancelled." };
+    } catch {
+      return { success: false, message: "Invalid order id." };
+    }
   },
 
-  async cancel(visitorId: string, orderId: string) {
-    if (!visitorId || !orderId) {
-      return { success: false, message: "Missing visitor or order." };
+  async getOrdersByUser(userIdInput: string) {
+    try {
+      const userId = BigInt(userIdInput);
+      const orders = await orderRepository.findByUser(userId);
+      return orders.map(toOrderDTO);
+    } catch {
+      return [];
     }
-    const result = await orderRepository.cancelOrder(orderId, visitorId);
-    if (result.count === 0) {
-      return { success: false, message: "Order not found or already cancelled." };
-    }
-    return { success: true, message: "Order cancelled." };
-  },
-
-  async reschedule(visitorId: string, orderId: string, visitDate: string) {
-    if (!visitorId || !orderId) {
-      return { success: false, message: "Missing visitor or order." };
-    }
-    const parsed = new Date(visitDate);
-    if (Number.isNaN(parsed.getTime())) {
-      return { success: false, message: "Invalid visit date." };
-    }
-    const result = await orderRepository.rescheduleOrder(orderId, visitorId, parsed);
-    if (result.count === 0) {
-      return { success: false, message: "Order not found or cannot be rescheduled." };
-    }
-    return { success: true, message: "Order rescheduled." };
   },
 };

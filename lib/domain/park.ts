@@ -1,8 +1,5 @@
-import type { TicketType } from "./ticketType";
-
 export type Park = {
-  id: string;
+  parkId: string;
   name: string;
-  location: string;
-  ticketTypes: TicketType[];
+  dailyCapacity: number;
 };

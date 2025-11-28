@@ -1,21 +1,22 @@
 import type { Metadata } from "next";
-import { Space_Grotesk, Work_Sans } from "next/font/google";
+import { DM_Sans, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 
-const display = Space_Grotesk({
+const display = Plus_Jakarta_Sans({
   variable: "--font-display",
   subsets: ["latin"],
+  weight: ["600", "700"],
 });
 
-const body = Work_Sans({
+const body = DM_Sans({
   variable: "--font-body",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
-  title: "NPOP Web Portal",
-  description: "Next.js GUI for the National Parks Online Portal domain model",
+  title: "NPOP Experience",
+  description: "Apple-inspired portal for park orders, checkout, and admin oversight",
 };
 
 export default function RootLayout({
